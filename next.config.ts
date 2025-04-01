@@ -1,13 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export", // Enable static HTML export
+  output: "export",
   images: {
-    unoptimized: true, // Required for static export
+    unoptimized: true,
   },
-  assetPrefix: "./", // Use relative paths for assets
+  // Modified configurations for IPFS compatibility:
   basePath: "",
-  trailingSlash: true, // Add trailing slashes to ensure proper relative path resolution
+  trailingSlash: true, // Add trailing slashes for proper path resolution
 };
 
 export default nextConfig;
