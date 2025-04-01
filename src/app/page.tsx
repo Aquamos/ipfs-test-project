@@ -7,7 +7,7 @@ export default function Home() {
         <h1 className="text-4xl font-bold mb-8">IPFS + IPNS Test</h1>
 
         <div className="bg-gray-100 p-6 rounded-lg mb-8">
-          <h2 className="text-2xl font-semibold mb-4">Deployment Info</h2>
+          <h2 className="text-2xl font-semibold mb-4">Deployment-Info</h2>
           <p>
             <strong>Deployed at:</strong> {deployTime}
           </p>
