@@ -18,14 +18,14 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-
+          
       # Add build ID as env variable
       - name: Set Build ID
         run: echo "NEXT_PUBLIC_BUILD_ID=$(date +%s)" >> $GITHUB_ENV
-
+          
       - run: npm ci
       - run: npm run build
-
+      
       # Deploy to IPFS via Storacha
       - id: deploy
         uses: storacha/add-to-web3@v3
@@ -48,12 +48,12 @@ jobs:
         run: |
           # Install w3name
           npm install w3name
-
+          
           # Create a Node script to update the IPNS name
           cat > update-ipns.js << 'EOF'
-          // IMPORTANT: Using ESM syntax as recommended in the docs
-          import * as Name from 'w3name';
-
+          // Using CommonJS syntax
+          const w3name = require('w3name');
+          
           async function main() {
             // Get environment variables
             const CID = process.env.NEW_CID;
@@ -71,7 +71,7 @@ jobs:
             try {
               // Load the name from key data
               const keyBytes = Buffer.from(keyData, 'base64');
-              const name = await Name.from(keyBytes);
+              const name = await w3name.from(keyBytes);
               
               console.log(`Loaded IPNS name: ${name.toString()}`);
               
@@ -84,7 +84,7 @@ jobs:
               try {
                 // Try to resolve current value
                 console.log('Resolving current record...');
-                const currentRevision = await Name.resolve(name);
+                const currentRevision = await w3name.resolve(name);
                 console.log(`Current revision points to: ${currentRevision.value}`);
                 
                 if (currentRevision.value === value) {
@@ -94,37 +94,38 @@ jobs:
                 
                 // Create an updated revision
                 console.log('Creating updated revision...');
-                revision = await Name.increment(currentRevision, value);
+                revision = await w3name.increment(currentRevision, value);
                 console.log('Created updated revision');
               } catch (err) {
                 console.log('Could not resolve current record or first publication, creating initial revision');
                 // If no current revision exists, create the first one
-                revision = await Name.v0(name, value);
+                revision = await w3name.v0(name, value);
                 console.log('Created initial revision');
               }
               
               // Publish the revision
               console.log('Publishing revision...');
-              await Name.publish(revision, name.key);
+              await w3name.publish(revision, name.key);
               
               console.log('Successfully published IPNS update');
               console.log(`Your content is now available at: https://dweb.link/ipns/${name.toString()}`);
+              console.log(`Or alternative gateway: https://ipfs.io/ipns/${name.toString()}`);
             } catch (err) {
               console.error('Error updating IPNS record:', err);
               console.error(err.stack);
               process.exit(1);
             }
           }
-
+          
           main().catch(err => {
             console.error('Unhandled error:', err);
             console.error(err.stack);
             process.exit(1);
           });
           EOF
-
-          # Run the Node script with ESM
-          node --experimental-modules --input-type=module update-ipns.js
+          
+          # Run the Node script (standard Node.js with CommonJS)
+          node update-ipns.js
         env:
           NEW_CID: ${{ steps.deploy.outputs.cid }}
           IPNS_KEY_DATA: ${{ secrets.IPNS_KEY_DATA }}
