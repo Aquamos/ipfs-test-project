@@ -1,0 +1,109 @@
+name: Deploy to IPFS with IPNS
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      cid: ${{ steps.deploy.outputs.cid }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # Add build ID as env variable
+      - name: Set Build ID
+        run: echo "NEXT_PUBLIC_BUILD_ID=$(date +%s)" >> $GITHUB_ENV
+
+      - run: npm ci
+      - run: npm run build
+
+      # Deploy to IPFS via Storacha
+      - id: deploy
+        uses: storacha/add-to-web3@v3
+        with:
+          path_to_add: "out"
+          secret_key: ${{ secrets.STORACHA_KEY }}
+          proof: ${{ secrets.STORACHA_PROOF }}
+
+      # Create or update IPNS name
+      - name: Update IPNS record with w3name
+        run: |
+          # Install w3name
+          npm install w3name
+
+          # Create a Node script to update the IPNS name
+          cat > update-ipns.js << 'EOF'
+          const { Name } = require('w3name');
+          const fs = require('fs');
+
+          async function main() {
+            const CID = process.env.NEW_CID;
+            const value = `/ipfs/${CID}`;
+            console.log('Updating IPNS to point to:', value);
+            
+            let name;
+            
+            // Check if we have a saved key
+            if (process.env.HAS_KEY === 'true') {
+              try {
+                const keyData = Buffer.from(process.env.IPNS_KEY_DATA, 'base64');
+                console.log('Loading existing IPNS name from key data');
+                name = await Name.from(keyData);
+              } catch (err) {
+                console.error('Error loading key:', err);
+                process.exit(1);
+              }
+            } else {
+              // First time: create a new name
+              console.log('Creating new IPNS name');
+              name = await Name.create();
+              
+              // Save the key data for future runs
+              const keyBytes = name.key.bytes;
+              console.log(`IPNS_NAME=${name.toString()}`);
+              console.log(`IPNS_KEY_DATA=${Buffer.from(keyBytes).toString('base64')}`);
+              console.log('Please save these as GitHub secrets!');
+            }
+            
+            try {
+              // Either create first revision or increment from existing
+              let revision;
+              if (process.env.HAS_REVISION === 'true') {
+                // Resolve the current value to get the latest revision
+                const currentRevision = await Name.resolve(name);
+                revision = await Name.increment(currentRevision, value);
+              } else {
+                // First time publishing
+                revision = await Name.v0(name, value);
+              }
+              
+              // Publish the new revision
+              await Name.publish(revision, name.key);
+              console.log('Successfully published IPNS update');
+              console.log(`Your content is now available at: https://dweb.link/ipns/${name.toString()}`);
+            } catch (err) {
+              console.error('Error publishing revision:', err);
+              process.exit(1);
+            }
+          }
+
+          main().catch(console.error);
+          EOF
+
+          # Run the Node script
+          node update-ipns.js
+        env:
+          NEW_CID: ${{ steps.deploy.outputs.cid }}
+          HAS_KEY: ${{ secrets.IPNS_KEY_DATA != '' && secrets.IPNS_NAME != '' }}
+          IPNS_KEY_DATA: ${{ secrets.IPNS_KEY_DATA }}
+          IPNS_NAME: ${{ secrets.IPNS_NAME }}
+          HAS_REVISION: ${{ secrets.IPNS_NAME != '' }}
