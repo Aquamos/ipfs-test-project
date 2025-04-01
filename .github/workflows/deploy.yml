@@ -19,14 +19,12 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      # Add build ID as env variable
       - name: Set Build ID
         run: echo "NEXT_PUBLIC_BUILD_ID=$(date +%s)" >> $GITHUB_ENV
 
       - run: npm ci
       - run: npm run build
 
-      # Deploy to IPFS via Storacha
       - id: deploy
         uses: storacha/add-to-web3@v3
         with:
@@ -34,87 +32,50 @@ jobs:
           secret_key: ${{ secrets.STORACHA_KEY }}
           proof: ${{ secrets.STORACHA_PROOF }}
 
-      # Check for required secrets
       - name: Check for required IPNS secrets
         run: |
           if [ -z "${{ secrets.IPNS_NAME }}" ] || [ -z "${{ secrets.IPNS_KEY_DATA }}" ]; then
-            echo "ERROR: IPNS_NAME and IPNS_KEY_DATA secrets are required."
-            echo "Please generate them manually and add them to your GitHub repository secrets."
             exit 1
           fi
 
-      # Update IPNS record with existing name
       - name: Update IPNS record with w3name
         run: |
-          # Install w3name
           npm install w3name
-
-          # Create a Node script to update the IPNS name
           cat > update-ipns.js << 'EOF'
           const w3name = require('w3name');
 
           async function main() {
-            // Get environment variables
             const CID = process.env.NEW_CID;
             const ipnsName = process.env.IPNS_NAME;
             const keyData = process.env.IPNS_KEY_DATA;
             
             if (!CID || !ipnsName || !keyData) {
-              console.error('Missing required environment variables');
               process.exit(1);
             }
             
             const value = `/ipfs/${CID}`;
-            console.log(`Updating IPNS ${ipnsName} to point to: ${value}`);
             
             try {
-              // Load the name from key data
               const keyBytes = Buffer.from(keyData, 'base64');
               const name = await w3name.from(keyBytes);
               
-              console.log(`Loaded IPNS name: ${name.toString()}`);
-              
-              if (name.toString() !== ipnsName) {
-                console.warn(`Warning: Loaded name ${name.toString()} doesn't match expected name ${ipnsName}`);
-              }
-              
-              // Get the current revision or create a new one
               let revision;
               try {
-                // Try to resolve current value
-                console.log('Resolving current record...');
                 const currentRevision = await w3name.resolve(name);
-                console.log(`Current revision points to: ${currentRevision.value}`);
-                
-                // Create an updated revision
                 revision = await w3name.increment(currentRevision, value);
-                console.log('Created updated revision');
               } catch (err) {
-                console.log('Could not resolve current record, creating initial revision');
-                // If no current revision exists, create the first one
                 revision = await w3name.v0(name, value);
-                console.log('Created initial revision');
               }
               
-              // Publish the revision
-              console.log('Publishing new revision...');
               await w3name.publish(revision, name.key);
-              
-              console.log('Successfully published IPNS update');
-              console.log(`Your content is now available at: https://dweb.link/ipns/${name.toString()}`);
             } catch (err) {
-              console.error('Error updating IPNS record:', err);
               process.exit(1);
             }
           }
 
-          main().catch(err => {
-            console.error('Unhandled error:', err);
-            process.exit(1);
-          });
+          main().catch(() => process.exit(1));
           EOF
 
-          # Run the Node script
           node update-ipns.js
         env:
           NEW_CID: ${{ steps.deploy.outputs.cid }}
