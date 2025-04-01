@@ -42,7 +42,7 @@ jobs:
         run: |
           npm install w3name
           cat > update-ipns.js << 'EOF'
-          const w3name = require('w3name');
+          const { Name } = require('w3name');
 
           async function main() {
             const CID = process.env.NEW_CID;
@@ -57,23 +57,24 @@ jobs:
             
             try {
               const keyBytes = Buffer.from(keyData, 'base64');
-              const name = await w3name.from(keyBytes);
+              const name = await Name.from(keyBytes);
               
               let revision;
               try {
-                const currentRevision = await w3name.resolve(name);
-                revision = await w3name.increment(currentRevision, value);
+                const currentRevision = await Name.resolve(name);
+                revision = await Name.increment(currentRevision, value);
               } catch (err) {
-                revision = await w3name.v0(name, value);
+                revision = await Name.v0(name, value);
               }
               
-              await w3name.publish(revision, name.key);
+              await Name.publish(revision, name.key);
             } catch (err) {
+              console.error(err);
               process.exit(1);
             }
           }
 
-          main().catch(() => process.exit(1));
+          main().catch(console.error);
           EOF
 
           node update-ipns.js
